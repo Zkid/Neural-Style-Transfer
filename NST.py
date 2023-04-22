@@ -20,6 +20,7 @@ def content_cost(content_output, generated_output):
 	return cost
 
 def style_cost(style_output, generated_output):
+	cost = 0
 	for i in range(len(style_output)):
 		so_i = style_output[i]
 		go_i = generated_output[i]
@@ -30,7 +31,7 @@ def style_cost(style_output, generated_output):
 		GC = gram_matrix(so_i)
 		GG = gram_matrix(go_i)
 		total = torch.sum(torch.square(torch.subtract(GC, GG)))
-		cost = total / (4 * n_C**2 * n_H**2 * n_W**2)
+		cost += total / (4 * n_C**2 * n_H**2 * n_W**2)
 
 	cost /= len(style_output)
 
@@ -46,7 +47,13 @@ def get_outputs(name):
     def hook(model, input, output):
         outputs[name] = output
     return hook
-	
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print('Using device:', device)
+print()
+if device.type == 'cuda':
+    print(torch.cuda.get_device_name(0))
+
 vgg19 = torchvision.models.vgg19(weights='VGG19_Weights.DEFAULT')
 vgg19 = vgg19.features[:29]
 
@@ -61,7 +68,7 @@ transform = transforms.Compose([
 
 content_image = Image.open("images/Louvre.jpg")
 content_tensor = transform(content_image).unsqueeze(0)
-style_image = Image.open("images/Starry Night.jpg")
+style_image = Image.open("images/Monet Poppies.jpg")
 style_tensor = transform(style_image).unsqueeze(0)
 
 outputs = {}
@@ -84,21 +91,20 @@ for epoch in range(n_epochs):
 	generated_output = [outputs['features' + str(style_coeffs[i])] for i in range(len(style_coeffs))]
 	c_cost = content_cost(content_output, generated_output[3])
 	s_cost = style_cost(style_output, generated_output)
-	t_cost = total_cost(c_cost, s_cost, 1, 100)
+	t_cost = total_cost(c_cost, s_cost, 10, 40)
 	if epoch % 100 == 0:
 		print (epoch, t_cost)
-		#if t_cost > prev_cost:
-			#plt.imshow(tensor_to_image(prev_tensor))
-			#plt.show()
-			#generated_tensor = prev_tensor
-			#break
-	if t_cost < min_cost:
-		min_cost = t_cost
-		best_tensor = generated_tensor
-		if epoch > 10000:
+		print (c_cost, s_cost)
+		print('Memory Usage:')
+		print('Allocated:', round(torch.cuda.memory_allocated(0)/1024**3,1), 'GB')
+		print('Cached:   ', round(torch.cuda.memory_reserved(0)/1024**3,1), 'GB')
+		if epoch >= 1000:
 			plt.imshow(tensor_to_image(best_tensor))
 			print (min_cost)
 			plt.show()
+	if t_cost < min_cost:
+		min_cost = t_cost
+		best_tensor = generated_tensor
 	optimizer.zero_grad()
 	t_cost.backward(retain_graph=True)
 	optimizer.step()
